@@ -1,4 +1,6 @@
-import React, { Component } from 'react';
+import React from 'react';
+import firebase from '../../firebase';
+import md5 from 'md5';
 import {
   Grid,
   Form,
@@ -9,32 +11,31 @@ import {
   Icon
 } from 'semantic-ui-react';
 import { Link } from 'react-router-dom';
-import firebase from '../../firebase';
 
-class Register extends Component {
+class Register extends React.Component {
   state = {
     username: '',
     email: '',
     password: '',
     passwordConfirmation: '',
-    errors: []
+    errors: [],
+    loading: false,
+    usersRef: firebase.database().ref('users')
   };
 
   isFormValid = () => {
     let errors = [];
     let error;
+
     if (this.isFormEmpty(this.state)) {
-      // throw error
       error = { message: 'Fill in all fields' };
       this.setState({ errors: errors.concat(error) });
       return false;
     } else if (!this.isPasswordValid(this.state)) {
-      // throw error
       error = { message: 'Password is invalid' };
       this.setState({ errors: errors.concat(error) });
       return false;
     } else {
-      //form valid
       return true;
     }
   };
@@ -62,21 +63,59 @@ class Register extends Component {
     errors.map((error, i) => <p key={i}>{error.message}</p>);
 
   handleChange = event => {
-    this.setState({
-      [event.target.name]: event.target.value
-    });
+    this.setState({ [event.target.name]: event.target.value });
   };
+
   handleSubmit = event => {
+    event.preventDefault();
     if (this.isFormValid()) {
-      event.preventDefault();
+      this.setState({ errors: [], loading: true });
       firebase
         .auth()
         .createUserWithEmailAndPassword(this.state.email, this.state.password)
         .then(createdUser => {
           console.log(createdUser);
+          createdUser.user
+            .updateProfile({
+              displayName: this.state.username,
+              photoURL: `http://gravatar.com/avatar/${md5(
+                createdUser.user.email
+              )}?d=identicon`
+            })
+            .then(() => {
+              this.saveUser(createdUser).then(() => {
+                console.log('user saved');
+              });
+            })
+            .catch(err => {
+              console.error(err);
+              this.setState({
+                errors: this.state.errors.concat(err),
+                loading: false
+              });
+            });
         })
-        .catch(err => console.log(err));
+        .catch(err => {
+          console.error(err);
+          this.setState({
+            errors: this.state.errors.concat(err),
+            loading: false
+          });
+        });
     }
+  };
+
+  saveUser = createdUser => {
+    return this.state.usersRef.child(createdUser.user.uid).set({
+      name: createdUser.user.displayName,
+      avatar: createdUser.user.photoURL
+    });
+  };
+
+  handleInputError = (errors, inputName) => {
+    return errors.some(error => error.message.toLowerCase().includes(inputName))
+      ? 'error'
+      : '';
   };
 
   render() {
@@ -85,27 +124,30 @@ class Register extends Component {
       email,
       password,
       passwordConfirmation,
-      errors
+      errors,
+      loading
     } = this.state;
+
     return (
       <Grid textAlign="center" verticalAlign="middle" className="app">
         <Grid.Column style={{ maxWidth: 450 }}>
-          <Header as="h2" icon color="orange" textAlign="center">
+          <Header as="h1" icon color="orange" textAlign="center">
             <Icon name="puzzle piece" color="orange" />
             Register for MIS-Chat
           </Header>
-          <Form size="large" onSubmit={this.handleSubmit}>
+          <Form onSubmit={this.handleSubmit} size="large">
             <Segment stacked>
               <Form.Input
                 fluid
                 name="username"
                 icon="user"
                 iconPosition="left"
-                placeholder="username"
+                placeholder="Username"
                 onChange={this.handleChange}
                 value={username}
                 type="text"
               />
+
               <Form.Input
                 fluid
                 name="email"
@@ -114,8 +156,10 @@ class Register extends Component {
                 placeholder="Email Address"
                 onChange={this.handleChange}
                 value={email}
+                className={this.handleInputError(errors, 'email')}
                 type="email"
               />
+
               <Form.Input
                 fluid
                 name="password"
@@ -124,8 +168,10 @@ class Register extends Component {
                 placeholder="Password"
                 onChange={this.handleChange}
                 value={password}
+                className={this.handleInputError(errors, 'password')}
                 type="password"
               />
+
               <Form.Input
                 fluid
                 name="passwordConfirmation"
@@ -134,9 +180,17 @@ class Register extends Component {
                 placeholder="Password Confirmation"
                 onChange={this.handleChange}
                 value={passwordConfirmation}
+                className={this.handleInputError(errors, 'password')}
                 type="password"
               />
-              <Button color="orange" fluid size="large">
+
+              <Button
+                disabled={loading}
+                className={loading ? 'loading' : ''}
+                color="orange"
+                fluid
+                size="large"
+              >
                 Submit
               </Button>
             </Segment>
